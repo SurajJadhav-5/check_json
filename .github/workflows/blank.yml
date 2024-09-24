@@ -1,0 +1,38 @@
+name: Validate JSON
+
+on:
+  push:
+    paths:
+      - '**.json'
+  pull_request:
+    paths:
+      - '**.json'
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v35
+        with:
+          files: '**.json'
+      
+      - name: Validate JSON
+        run: |
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if jq empty "$file"; then
+              echo "$file is valid JSON"
+            else
+              echo "$file is not valid JSON"
+              exit 1
+            fi
+          done
+
+      - name: Prevent merge on failure
+        if: failure()
+        run: |
+          echo "JSON validation failed. Merge will be prevented."
+          exit 1
