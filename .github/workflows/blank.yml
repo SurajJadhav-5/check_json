@@ -22,17 +22,45 @@ jobs:
       
       - name: Validate JSON
         run: |
+          invalid_files=()
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
-            if jq empty "$file"; then
-              echo "$file is valid JSON"
-            else
+            if ! jq empty "$file" 2>/dev/null; then
               echo "$file is not valid JSON"
-              exit 1
+              invalid_files+=("$file")
+            else
+              echo "$file is valid JSON"
             fi
           done
+          if [ ${#invalid_files[@]} -ne 0 ]; then
+            echo "The following files are not valid JSON:"
+            printf '%s\n' "${invalid_files[@]}"
+            exit 1
+          fi
 
-      - name: Prevent merge on failure
+      - name: Check JSON Validation
         if: failure()
         run: |
-          echo "JSON validation failed. Merge will be prevented."
+          echo "JSON validation failed. Merge will be blocked."
           exit 1
+
+    # This is the key addition
+    - name: Update check run
+      if: always()
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{secrets.GITHUB_TOKEN}}
+        script: |
+          const conclusion = '${{ job.status }}' === 'success' ? 'success' : 'failure'
+          const output = {
+            title: 'JSON Validation',
+            summary: conclusion === 'success' ? 'All JSON files are valid.' : 'Some JSON files are invalid. Please fix them before merging.',
+          }
+          await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: 'json-validation',
+            head_sha: context.sha,
+            status: 'completed',
+            conclusion: conclusion,
+            output: output
+          })
